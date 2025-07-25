@@ -1,0 +1,77 @@
+// Advanced Prophet Forecast with Holidays and Regressors
+// This example demonstrates Prophet with holiday effects and external regressors
+
+// Generate sample data with holidays and external factors
+| makeresults count=730
+| eval _time=relative_time(now(), "-".tostring(730-_serial_number)."d")
+| eval date=strftime(_time, "%Y-%m-%d")
+| eval day_of_year=tonumber(strftime(_time, "%j"))
+| eval year=tonumber(strftime(_time, "%Y"))
+
+// Add trend and seasonality
+| eval trend=_serial_number*0.05
+| eval yearly_season=15*sin(2*3.14159*day_of_year/365.25)
+| eval weekly_season=5*sin(2*3.14159*tonumber(strftime(_time, "%w"))/7)
+
+// Add holiday effects
+| eval holiday=""
+| eval holiday=case(
+    strftime(_time, "%m-%d")="01-01", "New Year",
+    strftime(_time, "%m-%d")="07-04", "Independence Day", 
+    strftime(_time, "%m-%d")="12-25", "Christmas",
+    day_of_year>=358 AND day_of_year<=365, "Holiday Season",
+    1=1, holiday
+)
+| eval holiday_effect=case(
+    holiday="New Year", 20,
+    holiday="Independence Day", 15,
+    holiday="Christmas", 25,
+    holiday="Holiday Season", 10,
+    1=1, 0
+)
+
+// Add external regressors
+| eval temperature=70+20*sin(2*3.14159*day_of_year/365.25)+random()%10-5
+| eval marketing_spend=1000+500*sin(2*3.14159*_serial_number/30)+random()%200-100
+| eval is_weekend=if(tonumber(strftime(_time, "%w")) IN (0,6), 1, 0)
+
+// Generate target variable
+| eval noise=random()%20-10
+| eval sales=200+trend+yearly_season+weekly_season+holiday_effect+
+    temperature*0.5+marketing_spend*0.01+is_weekend*(-10)+noise
+
+// Clean up fields
+| table date sales holiday temperature marketing_spend is_weekend
+
+// Run Prophet forecast with holidays and regressors
+| prophet_forecast ds_field=date y_field=sales periods=90 freq=D
+    growth=linear seasonality_mode=additive
+    yearly_seasonality=true weekly_seasonality=true daily_seasonality=false
+    holidays=holiday
+    regressors="temperature,marketing_spend,is_weekend"
+    changepoint_prior_scale=0.1
+    seasonality_prior_scale=15.0
+    confidence_interval=0.9
+    include_history=false
+
+// Format and display results
+| eval forecast_date=strptime(ds, "%Y-%m-%d %H:%M:%S")
+| eval forecast_date_str=strftime(forecast_date, "%Y-%m-%d")
+| eval prediction_interval=yhat_upper-yhat_lower
+| table forecast_date_str yhat yhat_lower yhat_upper trend yearly weekly 
+    temperature marketing_spend is_weekend prediction_interval
+
+// Optional: Add business logic
+| eval sales_category=case(
+    yhat<150, "Low",
+    yhat<250, "Medium", 
+    yhat<350, "High",
+    1=1, "Very High"
+)
+| eval confidence_level=case(
+    prediction_interval<20, "High Confidence",
+    prediction_interval<40, "Medium Confidence",
+    1=1, "Low Confidence"
+)
+
+| sort forecast_date_str
