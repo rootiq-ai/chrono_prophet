@@ -1,1 +1,75 @@
 
+# Metadata configuration for Prophet Algorithm MLTK App
+# This file defines permissions, ownership, and metadata for app components
+
+[]
+access = read : [ * ], write : [ admin, power ]
+export = system
+owner = admin
+version = 8.0.0
+modtime = 1642723200.000000000
+
+[commands/prophet_forecast]
+access = read : [ * ], write : [ admin, power ]
+export = system
+owner = admin
+
+[commands/prophet_fit]
+access = read : [ * ], write : [ admin, power ]
+export = system
+owner = admin
+
+[views]
+access = read : [ * ], write : [ admin, power ]
+export = system
+owner = admin
+
+[lookups/prophet_holidays.csv]
+access = read : [ * ], write : [ admin, power ]
+export = system
+owner = admin
+
+[transforms/prophet_holidays_lookup]
+access = read : [ * ], write : [ admin, power ]
+export = system
+owner = admin
+
+[transforms/prophet_frequency_mapping]
+access = read : [ * ], write : [ admin, power ]
+export = system
+owner = admin
+
+[transforms/prophet_models_collection]
+access = read : [ * ], write : [ admin, power ]
+export = system
+owner = admin
+
+[transforms/prophet_forecasts_collection]
+access = read : [ * ], write : [ admin, power ]
+export = system
+owner = admin
+
+[app]
+access = read : [ * ], write : [ admin ]
+export = system
+owner = admin
+
+[bin/prophet_forecast.py]
+access = read : [ admin, power ], write : [ admin ]
+export = system
+owner = admin
+
+[bin/prophet_fit.py]
+access = read : [ admin, power ], write : [ admin ]
+export = system
+owner = admin
+
+[lib/prophet_base.py]
+access = read : [ admin, power ], write : [ admin ]
+export = system
+owner = admin
+
+[lib/utils.py]
+access = read : [ admin, power ], write : [ admin ]
+export = system
+owner = admin
