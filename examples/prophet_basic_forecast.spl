@@ -1,0 +1,27 @@
+// Basic Prophet Forecast Example
+// This example demonstrates basic time series forecasting with Prophet
+
+// Generate sample time series data
+| makeresults count=365
+| eval _time=relative_time(now(), "-".tostring(365-_serial_number)."d")
+| eval date=strftime(_time, "%Y-%m-%d")
+| eval trend=_serial_number*0.1
+| eval seasonal=10*sin(2*3.14159*_serial_number/365.25)
+| eval noise=random()%10-5
+| eval sales=100+trend+seasonal+noise
+| table date sales
+
+// Run Prophet forecast
+| prophet_forecast ds_field=date y_field=sales periods=30 freq=D 
+    growth=linear seasonality_mode=additive 
+    yearly_seasonality=true weekly_seasonality=true daily_seasonality=false
+    confidence_interval=0.8 include_history=true
+
+// Format output for visualization
+| eval forecast_date=strptime(ds, "%Y-%m-%d %H:%M:%S")
+| eval forecast_date_str=strftime(forecast_date, "%Y-%m-%d")
+| table forecast_date_str yhat yhat_lower yhat_upper trend yearly weekly forecast_type
+
+// Optional: Create time series chart
+| sort forecast_date_str
+| fields forecast_date_str yhat yhat_lower yhat_upper forecast_type
