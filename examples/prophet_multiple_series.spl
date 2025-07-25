@@ -1,0 +1,156 @@
+// Multiple Time Series Forecasting with Prophet
+// This example demonstrates forecasting multiple time series using Prophet
+// by iterating over different series or using subsearch patterns
+
+// Method 1: Forecast multiple products separately using subsearch
+// Generate sample data for multiple products
+| makeresults count=365
+| eval _time=relative_time(now(), "-".tostring(365-_serial_number)."d")
+| eval date=strftime(_time, "%Y-%m-%d")
+| eval day_of_year=tonumber(strftime(_time, "%j"))
+
+// Create multiple product time series
+| eval product_a_base=100+_serial_number*0.1+15*sin(2*3.14159*day_of_year/365.25)+random()%20-10
+| eval product_b_base=150+_serial_number*0.08+20*sin(2*3.14159*day_of_year/365.25+1.5)+random()%25-12
+| eval product_c_base=200+_serial_number*0.12+10*sin(2*3.14159*day_of_year/365.25+3)+random()%30-15
+
+// Add product-specific seasonality and events
+| eval product_a=product_a_base+case(
+    tonumber(strftime(_time, "%w")) IN (0,6), 20,  // Weekend boost for product A
+    1=1, 0
+)
+| eval product_b=product_b_base+case(
+    tonumber(strftime(_time, "%m")) IN (11,12), 30,  // Holiday season boost for product B
+    1=1, 0
+)
+| eval product_c=product_c_base+case(
+    tonumber(strftime(_time, "%m")) IN (6,7,8), 25,  // Summer boost for product C
+    1=1, 0
+)
+
+// Reshape data for individual forecasting
+| eval temp=1
+| foreach product_* 
+    [eval product_name="<<FIELD>>", sales=<<FIELD>>]
+| where isnotnull(sales) AND product_name!="temp"
+| table date product_name sales
+
+// Method 1a: Use subsearch to forecast Product A
+[| search product_name="product_a" 
+ | prophet_forecast ds_field=date y_field=sales periods=30 
+     yearly_seasonality=true weekly_seasonality=true
+ | eval product_name="product_a"
+ | table product_name ds yhat yhat_lower yhat_upper forecast_type]
+
+// Uncomment the sections below to run individual forecasts:
+
+/*
+// Method 1b: Forecast Product B separately  
+| append 
+    [| search product_name="product_b"
+     | prophet_forecast ds_field=date y_field=sales periods=30
+         yearly_seasonality=true weekly_seasonality=false
+         seasonality_mode=multiplicative
+     | eval product_name="product_b"  
+     | table product_name ds yhat yhat_lower yhat_upper forecast_type]
+
+// Method 1c: Forecast Product C separately
+| append 
+    [| search product_name="product_c"
+     | prophet_forecast ds_field=date y_field=sales periods=30
+         yearly_seasonality=true weekly_seasonality=false
+     | eval product_name="product_c"
+     | table product_name ds yhat yhat_lower yhat_upper forecast_type]
+*/
+
+// Method 2: Using map command for multiple series (Alternative approach)
+/*
+| makeresults 
+| eval products=split("product_a,product_b,product_c", ",")
+| mvexpand products
+| map maxsearches=10 search="| inputlookup historical_data.csv 
+    | where product=\"$products$\" 
+    | prophet_forecast ds_field=date y_field=sales periods=30 
+        yearly_seasonality=true 
+    | eval product=\"$products$\""
+*/
+
+// Method 3: Consolidated approach with pre-processing for batch forecasting
+// This method processes all series in a single search with multiple Prophet calls
+
+/*
+| makeresults count=365
+| eval _time=relative_time(now(), "-".tostring(365-_serial_number)."d")
+| eval date=strftime(_time, "%Y-%m-%d")
+
+// Create comprehensive dataset with all products
+| eval product_a=100+_serial_number*0.1+15*sin(2*3.14159*tonumber(strftime(_time, "%j"))/365.25)+random()%20-10
+| eval product_b=150+_serial_number*0.08+20*sin(2*3.14159*tonumber(strftime(_time, "%j"))/365.25+1.5)+random()%25-12
+| eval product_c=200+_serial_number*0.12+10*sin(2*3.14159*tonumber(strftime(_time, "%j"))/365.25+3)+random()%30-15
+
+// Store original data for later joining
+| eval data_type="historical"
+| table date product_a product_b product_c data_type
+
+// Forecast Product A
+| append 
+    [| search data_type="historical"
+     | eval sales=product_a
+     | prophet_forecast ds_field=date y_field=sales periods=30
+     | eval product="product_a", forecast_date=strptime(ds, "%Y-%m-%d %H:%M:%S")
+     | eval forecast_date_str=strftime(forecast_date, "%Y-%m-%d")
+     | where forecast_type="forecast"
+     | table forecast_date_str product yhat yhat_lower yhat_upper]
+
+// Add forecasts for other products...
+*/
+
+// Method 4: Advanced multi-series with cross-series analysis
+// Compare forecast accuracy across different products
+
+/*
+| makeresults count=1
+| eval search_queries=split("product_a|product_b|product_c", "|")
+| mvexpand search_queries
+| eval product=search_queries
+| map maxsearches=5 search="
+    | makeresults count=365
+    | eval date=strftime(relative_time(now(), \"-\".tostring(365-_serial_number).\"d\"), \"%Y-%m-%d\")
+    | eval sales=case(
+        \"$product$\"=\"product_a\", 100+_serial_number*0.1+15*sin(2*3.14159*tonumber(strftime(strptime(date, \"%Y-%m-%d\"), \"%j\"))/365.25),
+        \"$product$\"=\"product_b\", 150+_serial_number*0.08+20*sin(2*3.14159*tonumber(strftime(strptime(date, \"%Y-%m-%d\"), \"%j\"))/365.25+1.5),
+        \"$product$\"=\"product_c\", 200+_serial_number*0.12+10*sin(2*3.14159*tonumber(strftime(strptime(date, \"%Y-%m-%d\"), \"%j\"))/365.25+3),
+        1=1, 100
+    ) + random()%20-10
+    | prophet_forecast ds_field=date y_field=sales periods=30 include_history=false
+    | eval product=\"$product$\"
+    | eval forecast_date=strftime(strptime(ds, \"%Y-%m-%d %H:%M:%S\"), \"%Y-%m-%d\")
+    | table product forecast_date yhat yhat_lower yhat_upper trend yearly
+    "
+*/
+
+// Format final results for visualization
+| eval forecast_date=strftime(strptime(ds, "%Y-%m-%d %H:%M:%S"), "%Y-%m-%d")
+| eval prediction_interval=yhat_upper-yhat_lower
+| eval forecast_category=case(
+    yhat<100, "Low",
+    yhat<200, "Medium",
+    yhat<300, "High",
+    1=1, "Very High"
+)
+
+// Add business intelligence
+| eval confidence_level=case(
+    prediction_interval<20, "High",
+    prediction_interval<40, "Medium",
+    1=1, "Low"
+)
+
+| eval day_of_week=strftime(strptime(forecast_date, "%Y-%m-%d"), "%A")
+| eval month=strftime(strptime(forecast_date, "%Y-%m-%d"), "%B")
+
+// Final output with business metrics
+| table product_name forecast_date day_of_week month yhat yhat_lower yhat_upper 
+    prediction_interval forecast_category confidence_level trend yearly
+
+| sort product_name forecast_date
